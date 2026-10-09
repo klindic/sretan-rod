@@ -395,10 +395,19 @@ function sched(){
 function toggleMusic(){
   hinted=false;
   if(!actx){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;actx=new AC();master=actx.createGain();master.connect(actx.destination)}
-  if(!musicOn){actx.resume();master.gain.cancelScheduledValues(0);master.gain.setValueAtTime(1,actx.currentTime);musicOn=true;nextT=actx.currentTime+.05;sched();musicTimer=setInterval(sched,400)}
-  else{musicOn=false;clearInterval(musicTimer);master.gain.setTargetAtTime(0,actx.currentTime,.03)}
+  if(!musicOn){
+    musicOn=true;
+    // unlock audio inside the user gesture (iOS/Safari need a real sound started here)
+    try{const sb=actx.createBufferSource();sb.buffer=actx.createBuffer(1,1,22050);sb.connect(actx.destination);sb.start(0)}catch(e){}
+    master.gain.cancelScheduledValues(0);master.gain.setValueAtTime(1,actx.currentTime);
+    const go=()=>{if(!musicOn)return;nextT=actx.currentTime+.05;sched();clearInterval(musicTimer);musicTimer=setInterval(sched,400)};
+    const p=actx.resume();
+    if(p&&p.then)p.then(go,()=>{musicOn=false});else go();
+  }else{musicOn=false;clearInterval(musicTimer);master.gain.setTargetAtTime(0,actx.currentTime,.03)}
 }
-addEventListener('pointerdown',toggleMusic);
+// 'click' is an activation event on every platform; pointerdown is not for touch
+addEventListener('click',toggleMusic);
+window.__music=()=>({on:musicOn,state:actx&&actx.state,t:actx&&actx.currentTime});
 
 fit();
 requestAnimationFrame(t=>{last=t;frame(t)});
