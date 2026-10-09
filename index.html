@@ -8,7 +8,7 @@
 <style>
   html,body{margin:0;height:100%;background:#05040f;overflow:hidden;touch-action:manipulation;
     -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
-  body{display:flex;align-items:center;justify-content:center}
+  body{display:flex;align-items:center;justify-content:center;cursor:pointer}
   #wrap{position:relative;line-height:0}
   canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
   /* CRT scanlines + vignette */
@@ -136,6 +136,7 @@ const TITLE_COL=['#ff5c8a','#ffd84d','#5ee6b0','#6ec6ff','#b48cff'];
 const BAND=['#0a0a2a','#100d3a','#17104a','#211659','#2d1a66','#3d2077','#51267f'];
 
 /* ---------- world state ---------- */
+let toast='',toastT=0;
 let T=0,score=0,bubbleFree=0,nextSpawn=0.6,musicOn=false,hinted=true;
 let stars=[],skyline=[],slots=[],balloons=[],confetti=[],agents=[],pile=[],thrown=[],parts=[],floaters=[];
 const mib={b:0};
@@ -318,7 +319,8 @@ function drawMarquee(){
   const s='SRETAN ROĐENDAN MIBOR! *** LEVEL UP! *** SVI AGENTI TI ČESTITAJU *** ';
   const w=tw(s)+4;const off=-(T*22)%w;
   for(let x=off;x<W;x+=w)text(s,x,H-7,1,'#fff','#4a3a9a');
-  if(hinted&&(Math.floor(T*2)&1)){const h='DODIRNI ZA MUZIKU';
+  if(toastT>0){toastT-=0.016;const w=tw(toast)+8;R(cx-w/2,H-27,w,9,'#1b1033');text(toast,cx-tw(toast)/2,H-25,1,'#5ee6b0')}
+  else if(hinted&&(Math.floor(T*2)&1)){const h='DODIRNI ZA MUZIKU';
     R(cx-tw(h)/2-3,H-27,tw(h)+6,9,'#1b1033');text(h,cx-tw(h)/2,H-25,1,'#fff')}
 }
 
@@ -394,19 +396,25 @@ function sched(){
 }
 function toggleMusic(){
   hinted=false;
-  if(!actx){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;actx=new AC();master=actx.createGain();master.connect(actx.destination)}
-  if(!musicOn){
-    musicOn=true;
-    // unlock audio inside the user gesture (iOS/Safari need a real sound started here)
-    try{const sb=actx.createBufferSource();sb.buffer=actx.createBuffer(1,1,22050);sb.connect(actx.destination);sb.start(0)}catch(e){}
-    master.gain.cancelScheduledValues(0);master.gain.setValueAtTime(1,actx.currentTime);
-    const go=()=>{if(!musicOn)return;nextT=actx.currentTime+.05;sched();clearInterval(musicTimer);musicTimer=setInterval(sched,400)};
-    const p=actx.resume();
-    if(p&&p.then)p.then(go,()=>{musicOn=false});else go();
-  }else{musicOn=false;clearInterval(musicTimer);master.gain.setTargetAtTime(0,actx.currentTime,.03)}
+  try{
+    if(!actx){const AC=window.AudioContext||window.webkitAudioContext;if(!AC){toast='NEMA ZVUKA';toastT=3;return}actx=new AC();master=actx.createGain();master.connect(actx.destination)}
+    if(!musicOn){
+      musicOn=true;toast='MUZIKA: UKLJUČENA';toastT=2;
+      // unlock audio inside the user gesture (iOS/Safari need a real sound started here)
+      try{const sb=actx.createBufferSource();sb.buffer=actx.createBuffer(1,1,22050);sb.connect(actx.destination);sb.start(0)}catch(e){}
+      master.gain.cancelScheduledValues(0);master.gain.setValueAtTime(1,actx.currentTime);
+      const go=()=>{if(!musicOn)return;nextT=actx.currentTime+.05;sched();clearInterval(musicTimer);musicTimer=setInterval(sched,400)};
+      const p=actx.resume();
+      if(p&&p.then)p.then(go,()=>{musicOn=false;toast='ZVUK BLOKIRAN';toastT=3});else go();
+    }else{musicOn=false;toast='MUZIKA: ISKLJUČENA';toastT=2;clearInterval(musicTimer);master.gain.setTargetAtTime(0,actx.currentTime,.03)}
+  }catch(e){musicOn=false;toast='ZVUK GREŠKA';toastT=3}
 }
-// 'click' is an activation event on every platform; pointerdown is not for touch
-addEventListener('click',toggleMusic);
+// iOS: window-level 'click' is unreliable on non-clickable elements, and only touchend/click unlock audio.
+// Listen on body for touchend (and click for mouse), de-duplicated.
+let lastTap=0;
+function onTap(e){const n=performance.now();if(n-lastTap<500)return;lastTap=n;if(e.cancelable&&e.type==='touchend')e.preventDefault();toggleMusic()}
+document.body.addEventListener('touchend',onTap,{passive:false});
+document.body.addEventListener('click',onTap);
 window.__music=()=>({on:musicOn,state:actx&&actx.state,t:actx&&actx.currentTime});
 
 fit();
